@@ -1,0 +1,4 @@
+"code","role_code","person_code","task","owner","due","status","completed_on","evidence","blocking","source"
+"D-101","R-FIN","P-103","Complete supervised month-end reconciliation","Leah Patel","2026-11-03","open","","","true","Fictional demo"
+"D-102","R-ENG","P-107","Lead the next supplier review","Mara Chen","2026-11-24","open","","","true","Fictional demo"
+"D-103","R-OPS","P-102","Write the holiday cover notes","Mara Chen","2026-11-08","open","","","false","Fictional demo"

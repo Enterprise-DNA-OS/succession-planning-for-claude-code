@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { getDb,REPO_ROOT } from './lib/db.mjs';
+import { migrate } from './migrate.mjs';
+import { seed } from './seed.mjs';
+import { run,reads,commands } from './succession.mjs';
+import { parseCsv } from './lib/csv.mjs';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'succession-smoke-'));
+process.env.DATA_DIR=path.join(root,'db');
+process.env.DATABASE_URL=process.env.TEST_DATABASE_URL||'';
+process.env.OUTPUT_DIR=root;
+let db;const exercised=new Set();
+const call=async(c,a=[],o={})=>{exercised.add(c);return run(db,c,a,o);};
+const today=new Date().toISOString().slice(0,10);
+const future=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+const actor={actor:'Smoke Reviewer'};
+const child=(file,args=[],expected=0)=>{
+ const r=spawnSync(process.execPath,[path.join(REPO_ROOT,'scripts',file),...args],{cwd:REPO_ROOT,env:process.env,encoding:'utf8',windowsHide:true});
+ assert.equal(r.status,expected,r.stderr+'\n'+r.stdout);return r.stdout+r.stderr;
+};
+try{
+ db=await getDb();
+ // TEST_DATABASE_URL must be an empty disposable database, never a real business database.
+ if(db.mode==='postgres'){const tables=await db.query("select tablename from pg_tables where schemaname=current_schema()");assert.equal(tables.length,0,'TEST_DATABASE_URL must point to an empty disposable database');}
+ assert.equal((await migrate(db)).ran.length,1);assert.equal((await migrate(db)).ran.length,0);
+ await seed(db);await seed(db);
+ assert.equal((await call('people')).length,7);
+ for(const c of Object.keys(reads))assert.ok(Array.isArray(await call(c)));
+ assert.equal((await call('coverage')).find(r=>r.code==='R-FIN').usable_successors,0);
+ assert.equal((await call('shared-successors'))[0].role_count,2);
+ assert.equal((await call('scenario',['P-102'])).find(r=>r.code==='R-OPS').remaining_cover,0);
+ assert.equal((await call('role',['operations lead'])).role[0].code,'R-OPS');
+ await assert.rejects(()=>call('scenario',['Alex']),/Ambiguous[\s\S]*Alex Reed[\s\S]*Alex Morgan/);
+ const [ops]=await db.query("select id from roles where code='R-OPS'");assert.equal((await call('role',[ops.id.slice(0,8)])).role[0].code,'R-OPS');
+ assert.ok((await call('compliance')).some(r=>r.rule==='NZ-IPP9'));
+ await assert.rejects(()=>call('add-person',[],{code:'bad'}),/actor/);
+ await call('add-person',[],{...actor,code:'P-200',name:'Test Person',team:'Test',purpose:'Continuity',notice:today,'retain-until':future,source:'Test fixture'});
+ await call('update-person',['P-200'],{...actor,status:'unavailable'});
+ await call('add-role',[],{...actor,code:'R-TEST',name:'Test Role',team:'Test',owner:'Test Owner','review-due':future,source:'Test fixture'});
+ await call('nominate',[],{...actor,role:'R-TEST',person:'P-200',source:'Test fixture'});
+ await assert.rejects(()=>call('nominate',[],{...actor,role:'R-OPS',person:'P-101',source:'Test fixture'}),/own successor/);
+ await assert.rejects(()=>call('assess',[],{...actor,role:'R-TEST',person:'P-200',readiness:'ready',interest:'confirmed',date:'2026-02-30',evidence:'Proof',source:'Test fixture'}),/real YYYY/);
+ await assert.rejects(()=>call('assess',[],{...actor,role:'R-TEST',person:'P-200',readiness:'ready',interest:'confirmed',date:future,evidence:'Proof',source:'Test fixture'}),/future evidence/);
+ await call('assess',[],{...actor,role:'R-TEST',person:'P-200',readiness:'ready',interest:'confirmed',date:today,evidence:'Observed role exercise',source:'Test fixture'});
+ assert.equal((await call('coverage')).find(r=>r.code==='R-TEST').usable_successors,0,'unavailable people cannot cover');
+ await call('update-person',['P-200'],{...actor,status:'active'});
+ assert.equal((await call('coverage')).find(r=>r.code==='R-TEST').usable_successors,1);
+ await call('add-action',[],{...actor,code:'D-200',role:'R-TEST',person:'P-200',task:'Practice escalation',owner:'Test Owner',due:future,source:'Test fixture'});
+ assert.equal((await call('coverage')).find(r=>r.code==='R-TEST').usable_successors,0,'open blocking work prevents usable cover');
+ await assert.rejects(()=>call('complete-action',['D-200'],{...actor,date:today}),/evidence/);
+ await call('complete-action',['D-200'],{...actor,date:today,evidence:'Observed escalation exercise'});
+ assert.equal((await call('coverage')).find(r=>r.code==='R-TEST').usable_successors,1);
+ await assert.rejects(()=>call('complete-action',['D-200'],{...actor,date:today,evidence:'Again'}),/already complete/);
+ await call('review-role',['R-TEST'],{...actor,next:future,notes:'Contact the role owner. <script>alert(1)</script>',interim:'P-200'});
+ await call('log',['R-TEST'],{...actor,note:'Reviewed with owner'});
+ for(const c of ['draft-handover','weekly-review']){
+ const rows=await call(c,c==='draft-handover'?['R-OPS']:[],{out:path.join(root,'drafts')});assert.match(fs.readFileSync(rows[0].file,'utf8'),/DRAFT/);
+ }
+ await assert.rejects(()=>db.query("update activity set actor='changed'"),/append-only/);
+ const snapshot=path.join(root,'export');await call('export',[],{dir:snapshot});
+ await assert.rejects(()=>call('export',[],{dir:snapshot}),/must be empty/);
+ const before=(await db.query('select count(*)::integer as n from activity'))[0].n;
+ await call('import',['successionhr'],{...actor,dir:snapshot,'dry-run':true});
+ assert.equal((await db.query('select count(*)::integer as n from activity'))[0].n,before,'dry-run rolls back audit entries too');
+ await call('import',['successionhr'],{...actor,dir:snapshot});await call('import',['successionhr'],{...actor,dir:snapshot});
+ assert.equal((await call('people')).length,8,'repeat import never duplicates');
+ // Bad late file must roll back updates made by earlier files in the same batch.
+ const dev=path.join(snapshot,'development.csv'),good=fs.readFileSync(dev,'utf8');fs.writeFileSync(dev,good.replace('R-FIN','R-MISSING'));
+ const count=(await db.query('select count(*)::integer as n from activity'))[0].n;
+ await assert.rejects(()=>call('import',['successionhr'],{...actor,dir:snapshot}),/Unknown roles/);
+ assert.equal((await db.query('select count(*)::integer as n from activity'))[0].n,count);
+ fs.writeFileSync(dev,good);
+ const pf=path.join(snapshot,'people.csv'),pgood=fs.readFileSync(pf,'utf8');fs.writeFileSync(pf,pgood.replace('"code"','"Employee, Code"'));
+ await assert.rejects(()=>call('import',['successionhr'],{...actor,dir:snapshot}),/map every column/);
+ const map=path.join(root,'mapping.json');fs.writeFileSync(map,JSON.stringify({people:{'Employee, Code':'code'}}));
+ await call('import',['successionhr'],{...actor,dir:snapshot,mapping:map,'dry-run':true});fs.writeFileSync(pf,pgood);
+ assert.equal(parseCsv('\ufeffname,note\r\n"Person","A, B\nC ""quote"""\r\n')[0].note,'A, B\nC "quote"');
+ await assert.rejects(()=>call('import',['other'],{...actor,dir:snapshot}),/Use import/);
+ await assert.rejects(()=>call('bogus'),/Unknown command/);
+ await call('help');assert.deepEqual([...exercised].filter(c=>commands.includes(c)).sort(),[...commands].sort(),'every CLI command is exercised');
+ const rows=await db.query("select * from activity where actor='Smoke Reviewer' and before_record is not null");assert.ok(rows.length>0);
+ const [sum]=await db.query("select count(*)::integer as n from pg_tables where schemaname=current_schema() and rowsecurity");assert.equal(sum.n,7,'all business and migration tables have RLS');
+ await db.close();db=null;
+ child('succession.mjs',['scenario','Alex'],1);const json=JSON.parse(child('succession.mjs',['coverage','--json']));assert.equal(json.length,5);
+ child('view.mjs');child('docs.mjs');
+ assert.ok(fs.existsSync(path.join(root,'views','week.html')));
+ const report=fs.readdirSync(path.join(root,'docs-out','handover')).find(f=>f.includes('r-test'));
+ const html=fs.readFileSync(path.join(root,'docs-out','handover',report),'utf8');assert.ok(!html.includes('<script>alert'));assert.ok(html.includes('&lt;script&gt;'));
+ console.log(`PASS: ${commands.length} CLI commands, migration replay, idempotent seed/import, atomic rollback, evidence gates, privacy checks, ambiguity, drafts, CSV mapping, export, branded documents and views (${process.platform}).`);
+}finally{if(db)await db.close();fs.rmSync(root,{recursive:true,force:true});}

@@ -1,11 +1,41 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
-    "file": "name",
+    "name": "handover",
+    "title": "Draft role handover",
+    "for_each": "select id,code from roles order by code",
+    "file": "code",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Role and cover",
+        "layout": "record",
+        "sql": "select code,role,owner,incumbent,interim,target_date,coverage,continuity_notes from role_coverage where id=$1",
+        "note": "Role owner to confirm dates, access and delegated authority. No appointment is made by this document."
+      },
+      {
+        "title": "Readiness evidence",
+        "sql": "select person,readiness,interest,assessed_on,evidence,assessor,blocking_actions,usable from successor_status where role_id=$1 order by person_code"
+      },
+      {
+        "title": "Development commitments",
+        "sql": "select d.code,d.task,d.owner,d.due,d.status,d.blocking,d.evidence from development d join successors s on s.id=d.successor_id where s.role_id=$1 order by d.due"
+      }
+    ]
+  },
+  {
+    "name": "development-plan",
+    "title": "Draft successor development plan",
+    "for_each": "select s.id,r.code || '-' || p.code as code from successors s join roles r on r.id=s.role_id join people p on p.id=s.person_id order by r.code,p.code",
+    "file": "code",
+    "sections": [
+      {
+        "title": "Assessment",
+        "layout": "record",
+        "sql": "select role,person,readiness,interest,assessed_on,evidence,assessor,usable from successor_status where id=$1"
+      },
+      {
+        "title": "Agreed actions",
+        "sql": "select code,task,owner,due,status,blocking,evidence from development where successor_id=$1 order by due"
+      }
     ]
   }
 ]

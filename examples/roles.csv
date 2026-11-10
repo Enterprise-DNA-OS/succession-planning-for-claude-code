@@ -1,0 +1,5 @@
+"code","name","team","owner","incumbent_code","interim_code","criticality","target_date","review_due","continuity_notes","source"
+"R-ENG","Engineering Lead","Engineering","Mara Chen","","","critical","2026-11-20","2026-11-17","Document the maintenance supplier contacts and current projects.","Fictional demo"
+"R-FIN","Finance Lead","Finance","Mara Chen","P-104","","critical","2026-11-30","2026-11-02","Director retains payment authority. Prepare the close checklist.","Fictional demo"
+"R-OPS","Operations Lead","Operations","Mara Chen","P-101","P-102","critical","2026-12-15","2026-11-06","Alex can run the daily production meeting. Contract approval remains with the director.","Fictional demo"
+"R-QUAL","Quality Lead","Quality","Mara Chen","P-105","P-102","important","","2026-12-10","Keep the batch-release sign-off with the appointed quality officer.","Fictional demo"

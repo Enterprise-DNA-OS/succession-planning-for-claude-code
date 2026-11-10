@@ -1,0 +1,7 @@
+"role_code","person_code","readiness","interest","assessed_on","evidence","assessor","source"
+"R-ENG","P-107","within12","confirmed","2026-10-31","Needs supplier negotiation practice","Mara Chen","Fictional demo"
+"R-FIN","P-103","ready","confirmed","2026-10-21","Close checklist walkthrough; reconciliation training remains","Mara Chen","Fictional demo"
+"R-FIN","P-106","ready","confirmed","2026-07-13","Historic assessment before departure","Mara Chen","Fictional demo"
+"R-OPS","P-102","ready","confirmed","2026-10-31","Ran two supervised production reviews","Mara Chen","Fictional demo"
+"R-OPS","P-105","ready","declined","2026-10-31","Does not want the operations role","Mara Chen","Fictional demo"
+"R-QUAL","P-102","ready","confirmed","2026-10-26","Completed the quality handover with the incumbent","Mara Chen","Fictional demo"

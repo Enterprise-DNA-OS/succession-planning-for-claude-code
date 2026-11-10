@@ -1,13 +1,46 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Succession Planning for Claude Code: what needs attention, rendered by npm run view",
+    "title": "Weekly succession review",
+    "subtitle": "Evidence checks and development commitments. Review only, no appointments.",
     "sections": [
       {
         "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "sql": "select * from attention order by due nulls last, reference"
+      },
+      {
+        "title": "Coverage by role",
+        "sql": "select code,role,owner,coverage,usable_successors,ready_names from role_coverage order by code"
+      },
+      {
+        "title": "Development",
+        "sql": "select code,role,person,task,owner,due,status,blocking from development_board order by due"
+      }
+    ]
+  },
+  {
+    "name": "bench",
+    "title": "Successor coverage",
+    "subtitle": "Shared successors need a capacity decision by the role owners.",
+    "sections": [
+      {
+        "title": "Recorded readiness",
+        "sql": "select role,person,readiness,interest,availability,stale,blocking_actions,usable from successor_status order by role_code,person_code"
+      },
+      {
+        "title": "One person, several roles",
+        "sql": "select * from shared_successors order by person_code"
+      }
+    ]
+  },
+  {
+    "name": "privacy",
+    "title": "People record review",
+    "subtitle": "Evidence prompts against selected NZ privacy principles, not a legal certification.",
+    "sections": [
+      {
+        "title": "Records needing review",
+        "sql": "select * from compliance_findings order by rule,reference"
       }
     ]
   }
